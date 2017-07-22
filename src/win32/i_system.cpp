@@ -63,7 +63,6 @@
 #include <richedit.h>
 #include <wincrypt.h>
 
-#define USE_WINDOWS_DWORD
 #include "hardware.h"
 #include "doomerrors.h"
 #include <math.h>
@@ -163,13 +162,12 @@ UINT TimerPeriod;
 UINT TimerEventID;
 UINT MillisecondsPerTic;
 HANDLE NewTicArrived;
-uint32 LanguageIDs[4];
+uint32_t LanguageIDs[4];
 
 int (*I_GetTime) (bool saveMS);
 int (*I_WaitForTic) (int);
 void (*I_FreezeTime) (bool frozen);
 
-os_t OSPlatform;
 bool gameisdead;
 
 // PRIVATE DATA DEFINITIONS ------------------------------------------------
@@ -486,10 +484,22 @@ static void CALLBACK TimerTicked(UINT id, UINT msg, DWORD_PTR user, DWORD_PTR dw
 // saved tic.
 //
 //==========================================================================
+static uint32_t FrameTime;
 
-double I_GetTimeFrac(uint32 *ms)
+void I_SetFrameTime()
 {
-	DWORD now = timeGetTime();
+	FrameTime = timeGetTime();
+}
+
+double I_GetTimeFrac(uint32_t *ms)
+{
+	//DWORD now = MAX<uint32_t>(FrameTime, TicStart);
+	DWORD now = FrameTime;
+	if (FrameTime < TicStart)
+	{
+		// Preliminary kept in to see if this can happen. Should be removed once confirmed ok.
+		Printf("Timer underflow!\n");
+	}
 	if (ms != NULL)
 	{
 		*ms = TicNext;
@@ -543,24 +553,7 @@ void I_DetectOS(void)
 
 	switch (info.dwPlatformId)
 	{
-	case VER_PLATFORM_WIN32_WINDOWS:
-		OSPlatform = os_Win95;
-		if (info.dwMinorVersion < 10)
-		{
-			osname = "95";
-		}
-		else if (info.dwMinorVersion < 90)
-		{
-			osname = "98";
-		}
-		else
-		{
-			osname = "Me";
-		}
-		break;
-
 	case VER_PLATFORM_WIN32_NT:
-		OSPlatform = info.dwMajorVersion < 5 ? os_WinNT4 : os_Win2k;
 		osname = "NT";
 		if (info.dwMajorVersion == 5)
 		{
@@ -606,31 +599,14 @@ void I_DetectOS(void)
 		break;
 
 	default:
-		OSPlatform = os_unknown;
 		osname = "Unknown OS";
 		break;
 	}
 
-	if (OSPlatform == os_Win95)
-	{
-		if (!batchrun) Printf ("OS: Windows %s %lu.%lu.%lu %s\n",
-				osname,
-				info.dwMajorVersion, info.dwMinorVersion,
-				info.dwBuildNumber & 0xffff, info.szCSDVersion);
-	}
-	else
-	{
-		if (!batchrun) Printf ("OS: Windows %s (NT %lu.%lu) Build %lu\n    %s\n",
-				osname,
-				info.dwMajorVersion, info.dwMinorVersion,
-				info.dwBuildNumber, info.szCSDVersion);
-	}
-
-	if (OSPlatform == os_unknown)
-	{
-		if (!batchrun) Printf ("(Assuming Windows 2000)\n");
-		OSPlatform = os_Win2k;
-	}
+	if (!batchrun) Printf ("OS: Windows %s (NT %lu.%lu) Build %lu\n    %s\n",
+			osname,
+			info.dwMajorVersion, info.dwMinorVersion,
+			info.dwBuildNumber, info.szCSDVersion);
 }
 
 //==========================================================================
@@ -680,11 +656,11 @@ void SetLanguageIDs()
 	}
 	else
 	{
-		DWORD lang = 0;
+		uint32_t lang = 0;
 
-		((BYTE *)&lang)[0] = (language)[0];
-		((BYTE *)&lang)[1] = (language)[1];
-		((BYTE *)&lang)[2] = (language)[2];
+		((uint8_t *)&lang)[0] = (language)[0];
+		((uint8_t *)&lang)[1] = (language)[1];
+		((uint8_t *)&lang)[2] = (language)[2];
 		LanguageIDs[0] = lang;
 		LanguageIDs[1] = lang;
 		LanguageIDs[2] = lang;
@@ -708,7 +684,7 @@ void CalculateCPUSpeed()
 
 	QueryPerformanceFrequency (&freq);
 
-	if (freq.QuadPart != 0 && CPU.bRDTSC)
+	if (freq.QuadPart != 0)
 	{
 		LARGE_INTEGER count1, count2;
 		cycle_t ClockCalibration;
@@ -910,7 +886,7 @@ void ToEditControl(HWND edit, const char *buf, wchar_t *wbuf, int bpos)
 	};
 	for (int i = 0; i <= bpos; ++i)
 	{
-		wchar_t code = (BYTE)buf[i];
+		wchar_t code = (uint8_t)buf[i];
 		if (code >= 0x1D && code <= 0x1F)
 		{ // The bar characters, most commonly used to indicate map changes
 			code = 0x2550;	// Box Drawings Double Horizontal
@@ -985,7 +961,7 @@ static void DoPrintStr(const char *cp, HWND edit, HANDLE StdOut)
 		}
 		else
 		{
-			const BYTE *color_id = (const BYTE *)cp + 1;
+			const uint8_t *color_id = (const uint8_t *)cp + 1;
 			EColorRange range = V_ParseFontColor(color_id, CR_UNTRANSLATED, CR_YELLOW);
 			cp = (const char *)color_id;
 
@@ -999,7 +975,7 @@ static void DoPrintStr(const char *cp, HWND edit, HANDLE StdOut)
 					// eight basic colors, and each comes in a dark and a bright
 					// variety.
 					float h, s, v, r, g, b;
-					WORD attrib = 0;
+					int attrib = 0;
 
 					RGBtoHSV(color.r / 255.f, color.g / 255.f, color.b / 255.f, &h, &s, &v);
 					if (s != 0)
@@ -1016,7 +992,7 @@ static void DoPrintStr(const char *cp, HWND edit, HANDLE StdOut)
 						else if (v < 0.90) attrib = FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE;
 						else			   attrib = FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE | FOREGROUND_INTENSITY;
 					}
-					SetConsoleTextAttribute(StdOut, attrib);
+					SetConsoleTextAttribute(StdOut, (WORD)attrib);
 				}
 				if (edit != NULL)
 				{
@@ -1376,7 +1352,7 @@ static HCURSOR CreateCompatibleCursor(FTexture *cursorpic)
 	Rectangle(xor_mask_dc, 0, 0, 32, 32);
 
 	FBitmap bmp;
-	const BYTE *pixels;
+	const uint8_t *pixels;
 
 	bmp.Create(picwidth, picheight);
 	cursorpic->CopyTrueColorPixels(&bmp, 0, 0);
@@ -1387,7 +1363,7 @@ static HCURSOR CreateCompatibleCursor(FTexture *cursorpic)
 	{
 		for (int x = 0; x < picwidth; ++x)
 		{
-			const BYTE *bgra = &pixels[x*4 + y*bmp.GetPitch()];
+			const uint8_t *bgra = &pixels[x*4 + y*bmp.GetPitch()];
 			if (bgra[3] != 0)
 			{
 				SetPixelV(and_mask_dc, x, y, RGB(0,0,0));
@@ -1463,7 +1439,7 @@ static HCURSOR CreateAlphaCursor(FTexture *cursorpic)
 	// a negative pitch so that CopyTrueColorPixels will use GDI's orientation.
 	if (scale == 1)
 	{
-		FBitmap bmp((BYTE *)bits + 31 * 32 * 4, -32 * 4, 32, 32);
+		FBitmap bmp((uint8_t *)bits + 31 * 32 * 4, -32 * 4, 32, 32);
 		cursorpic->CopyTrueColorPixels(&bmp, 0, 0);
 	}
 	else
@@ -1471,7 +1447,7 @@ static HCURSOR CreateAlphaCursor(FTexture *cursorpic)
 		TArray<uint32_t> unscaled;
 		unscaled.Resize(32 * 32);
 		for (int i = 0; i < 32 * 32; i++) unscaled[i] = 0;
-		FBitmap bmp((BYTE *)&unscaled[0] + 31 * 32 * 4, -32 * 4, 32, 32);
+		FBitmap bmp((uint8_t *)&unscaled[0] + 31 * 32 * 4, -32 * 4, 32, 32);
 		cursorpic->CopyTrueColorPixels(&bmp, 0, 0);
 		uint32_t *scaled = (uint32_t*)bits;
 		for (int y = 0; y < 32 * scale; y++)
@@ -1766,7 +1742,7 @@ unsigned int I_MakeRNGSeed()
 	{
 		return (unsigned int)time(NULL);
 	}
-	if (!CryptGenRandom(prov, sizeof(seed), (BYTE *)&seed))
+	if (!CryptGenRandom(prov, sizeof(seed), (uint8_t *)&seed))
 	{
 		seed = (unsigned int)time(NULL);
 	}
@@ -1834,9 +1810,9 @@ int VS14Stat(const char *path, struct _stat64i32 *buffer)
 	buffer->st_uid = 0;
 	buffer->st_gid = 0;
 	buffer->st_size = data.nFileSizeLow;
-	buffer->st_atime = (*(QWORD*)&data.ftLastAccessTime) / 10000000 - 11644473600LL;
-	buffer->st_mtime = (*(QWORD*)&data.ftLastWriteTime) / 10000000 - 11644473600LL;
-	buffer->st_ctime = (*(QWORD*)&data.ftCreationTime) / 10000000 - 11644473600LL;
+	buffer->st_atime = (*(uint64_t*)&data.ftLastAccessTime) / 10000000 - 11644473600LL;
+	buffer->st_mtime = (*(uint64_t*)&data.ftLastWriteTime) / 10000000 - 11644473600LL;
+	buffer->st_ctime = (*(uint64_t*)&data.ftCreationTime) / 10000000 - 11644473600LL;
 	return 0;
 }
 #endif

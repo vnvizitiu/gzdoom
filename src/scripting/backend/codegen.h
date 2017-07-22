@@ -45,6 +45,9 @@
 #include "s_sound.h"
 #include "actor.h"
 #include "vmbuilder.h"
+#include "scopebarrier.h"
+#include "types.h"
+#include "vmintern.h"
 
 
 #define CHECKRESOLVED() if (isresolved) return this; isresolved=true;
@@ -77,7 +80,7 @@ struct FCompileContext
 	FxCompoundStatement *Block = nullptr;
 	PPrototype *ReturnProto;
 	PFunction *Function;	// The function that is currently being compiled (or nullptr for constant evaluation.)
-	PStruct *Class;			// The type of the owning class.
+	PContainerType *Class;		// The type of the owning class.
 	bool FromDecorate;		// DECORATE must silence some warnings and demote some errors.
 	int StateIndex;			// index in actor's state table for anonymous functions, otherwise -1 (not used by DECORATE which pre-resolves state indices)
 	int StateCount;			// amount of states an anoymous function is being used on (must be 1 for state indices to be allowed.)
@@ -85,9 +88,11 @@ struct FCompileContext
 	bool Unsafe = false;
 	TDeletingArray<FxLocalVariableDeclaration *> FunctionArgs;
 	PNamespace *CurGlobals;
+	VersionInfo Version;
+	FString VersionString;
 
-	FCompileContext(PNamespace *spc, PFunction *func, PPrototype *ret, bool fromdecorate, int stateindex, int statecount, int lump);
-	FCompileContext(PNamespace *spc, PStruct *cls, bool fromdecorate);	// only to be used to resolve constants!
+	FCompileContext(PNamespace *spc, PFunction *func, PPrototype *ret, bool fromdecorate, int stateindex, int statecount, int lump, const VersionInfo &ver);
+	FCompileContext(PNamespace *spc, PContainerType *cls, bool fromdecorate);	// only to be used to resolve constants!
 
 	PSymbol *FindInClass(FName identifier, PSymbolTable *&symt);
 	PSymbol *FindInSelfClass(FName identifier, PSymbolTable *&symt);
@@ -95,7 +100,7 @@ struct FCompileContext
 
 	void HandleJumps(int token, FxExpression *handler);
 	void CheckReturn(PPrototype *proto, FScriptPosition &pos);
-	bool CheckReadOnly(int flags);
+	bool CheckWritable(int flags);
 	FxLocalVariableDeclaration *FindLocalVariable(FName name);
 };
 
@@ -291,6 +296,7 @@ enum EFxType
 	EFX_NamedNode,
 	EFX_GetClass,
 	EFX_GetParentClass,
+	EFX_GetClassName,
 	EFX_StrLen,
 	EFX_ColorLiteral,
 	EFX_GetDefaultByType,
@@ -321,19 +327,20 @@ public:
 	virtual bool isConstant() const;
 	virtual bool RequestAddress(FCompileContext &ctx, bool *writable);
 	virtual PPrototype *ReturnProto();
-	virtual VMFunction *GetDirectFunction();
+	virtual VMFunction *GetDirectFunction(PFunction *func, const VersionInfo &ver);
 	virtual bool CheckReturn() { return false; }
 	virtual int GetBitValue() { return -1; }
 	bool IsNumeric() const { return ValueType->isNumeric(); }
-	bool IsFloat() const { return ValueType->GetRegType() == REGT_FLOAT && ValueType->GetRegCount() == 1; }
-	bool IsInteger() const { return ValueType->isNumeric() && (ValueType->GetRegType() == REGT_INT); }
-	bool IsPointer() const { return ValueType->GetRegType() == REGT_POINTER; }
+	bool IsFloat() const { return ValueType->isFloat(); }
+	bool IsInteger() const { return ValueType->isNumeric() && ValueType->isIntCompatible(); }
+	bool IsPointer() const { return ValueType->isPointer(); }
 	bool IsVector() const { return ValueType == TypeVector2 || ValueType == TypeVector3; };
-	bool IsBoolCompat() const { return ValueType->GetRegCount() == 1 && (ValueType->GetRegType() == REGT_INT || ValueType->GetRegType() == REGT_FLOAT || ValueType->GetRegType() == REGT_POINTER); }
-	bool IsObject() const { return ValueType->IsKindOf(RUNTIME_CLASS(PPointer)) && !ValueType->IsKindOf(RUNTIME_CLASS(PClassPointer)) && ValueType != TypeNullPtr && static_cast<PPointer*>(ValueType)->PointedType->IsKindOf(RUNTIME_CLASS(PClass)); }
-	bool IsArray() const { return ValueType->IsKindOf(RUNTIME_CLASS(PArray)) || (ValueType->IsKindOf(RUNTIME_CLASS(PPointer)) && static_cast<PPointer*>(ValueType)->PointedType->IsKindOf(RUNTIME_CLASS(PArray))); }
-	bool IsResizableArray() const { return (ValueType->IsKindOf(RUNTIME_CLASS(PPointer)) && static_cast<PPointer*>(ValueType)->PointedType->IsKindOf(RUNTIME_CLASS(PResizableArray))); } // can only exist in pointer form.
-	bool IsDynamicArray() const { return (ValueType->IsKindOf(RUNTIME_CLASS(PDynArray))); }
+	bool IsBoolCompat() const { return ValueType->isScalar(); }
+	bool IsObject() const { return ValueType->isObjectPointer(); }
+	bool IsArray() const { return ValueType->isArray() || (ValueType->isPointer() && ValueType->toPointer()->PointedType->isArray()); }
+	bool isStaticArray() const { return (ValueType->isPointer() && ValueType->toPointer()->PointedType->isStaticArray()); } // can only exist in pointer form.
+	bool IsDynamicArray() const { return (ValueType->isDynArray()); }
+	bool IsNativeStruct() const { return (ValueType->isStruct() && static_cast<PStruct*>(ValueType)->isNative); }
 
 	virtual ExpEmit Emit(VMFunctionBuilder *build);
 	void EmitStatement(VMFunctionBuilder *build);
@@ -369,7 +376,7 @@ public:
 
 	FxIdentifier(FName i, const FScriptPosition &p);
 	FxExpression *Resolve(FCompileContext&);
-	FxExpression *ResolveMember(FCompileContext&, PStruct*, FxExpression*&, PStruct*);
+	FxExpression *ResolveMember(FCompileContext&, PContainerType*, FxExpression*&, PContainerType*);
 };
 
 
@@ -404,7 +411,6 @@ class FxClassDefaults : public FxExpression
 public:
 	FxClassDefaults(FxExpression *, const FScriptPosition &);
 	~FxClassDefaults();
-	PPrototype *ReturnProto();
 	FxExpression *Resolve(FCompileContext&);
 	ExpEmit Emit(VMFunctionBuilder *build);
 };
@@ -506,7 +512,6 @@ public:
 
 	FxConstant(PType *type, VMValue &vmval, const FScriptPosition &pos) : FxExpression(EFX_Constant, pos)
 	{
-		ValueType = value.Type = type;
 		isresolved = true;
 		switch (vmval.Type)
 		{
@@ -520,13 +525,14 @@ public:
 			break;
 
 		case REGT_STRING:
-			value = ExpVal(vmval.s());
+			new(&value) ExpVal(vmval.s());
 			break;
 
 		case REGT_POINTER:
 			value.pointer = vmval.a;
 			break;
 		}
+		ValueType = value.Type = type;
 	}
 	
 	static FxExpression *MakeConstant(PSymbol *sym, const FScriptPosition &pos);
@@ -1208,6 +1214,7 @@ private:
 class FxNew : public FxExpression
 {
 	FxExpression *val;
+	PFunction *CallingFunction;
 
 public:
 
@@ -1316,6 +1323,27 @@ public:
 
 //==========================================================================
 //
+//
+//
+//==========================================================================
+
+class FxRandomSeed : public FxExpression
+{
+protected:
+	bool EmitTail;
+	FRandom *rng;
+	FxExpression *seed;
+
+public:
+
+	FxRandomSeed(FRandom *, FxExpression *mi, const FScriptPosition &pos, bool nowarn);
+	~FxRandomSeed();
+	FxExpression *Resolve(FCompileContext&);
+	ExpEmit Emit(VMFunctionBuilder *build);
+};
+
+//==========================================================================
+//
 //	FxMemberBase
 //
 //==========================================================================
@@ -1326,6 +1354,7 @@ public:
 	PField *membervar;
 	bool AddressRequested = false;
 	bool AddressWritable = true;
+	int BarrierSide = -1; // [ZZ] some magic
 	FxMemberBase(EFxType type, PField *f, const FScriptPosition &p);
 };
 
@@ -1655,6 +1684,24 @@ public:
 
 //==========================================================================
 //
+//	FxGetClass
+//
+//==========================================================================
+
+class FxGetClassName : public FxExpression
+{
+	FxExpression *Self;
+
+public:
+
+	FxGetClassName(FxExpression *self);
+	~FxGetClassName();
+	FxExpression *Resolve(FCompileContext&);
+	ExpEmit Emit(VMFunctionBuilder *build);
+};
+
+//==========================================================================
+//
 //	FxGetDefaultByType
 //
 //==========================================================================
@@ -1699,21 +1746,25 @@ class FxVMFunctionCall : public FxExpression
 {
 	friend class FxMultiAssign;
 
-	bool EmitTail;
+	bool EmitTail = false;
 	bool NoVirtual;
+	bool hasStringArgs = false;
 	FxExpression *Self;
 	PFunction *Function;
 	FArgumentList ArgList;
 	// for multi assignment
 	int AssignCount = 0;
 	TArray<ExpEmit> ReturnRegs;
+	PFunction *CallingFunction;
+
+	bool CheckAccessibility(const VersionInfo &ver);
 
 public:
 	FxVMFunctionCall(FxExpression *self, PFunction *func, FArgumentList &args, const FScriptPosition &pos, bool novirtual);
 	~FxVMFunctionCall();
 	FxExpression *Resolve(FCompileContext&);
 	PPrototype *ReturnProto();
-	VMFunction *GetDirectFunction();
+	VMFunction *GetDirectFunction(PFunction *func, const VersionInfo &ver);
 	ExpEmit Emit(VMFunctionBuilder *build);
 	bool CheckEmitCast(VMFunctionBuilder *build, bool returnit, ExpEmit &reg);
 	TArray<PType*> &GetReturnTypes() const
@@ -1738,7 +1789,7 @@ public:
 	FxExpression *Resolve(FCompileContext&);
 	ExpEmit Emit(VMFunctionBuilder *build);
 	void Add(FxExpression *expr) { if (expr != NULL) Expressions.Push(expr); expr->NeedResult = false; }
-	VMFunction *GetDirectFunction();
+	VMFunction *GetDirectFunction(PFunction *func, const VersionInfo &ver);
 	bool CheckReturn();
 };
 
@@ -1945,7 +1996,7 @@ public:
 	~FxReturnStatement();
 	FxExpression *Resolve(FCompileContext&);
 	ExpEmit Emit(VMFunctionBuilder *build);
-	VMFunction *GetDirectFunction();
+	VMFunction *GetDirectFunction(PFunction *func, const VersionInfo &ver);
 	bool CheckReturn() { return true; }
 };
 
@@ -1996,7 +2047,7 @@ public:
 
 class FxStateByIndex : public FxExpression
 {
-	int index;
+	unsigned index;
 
 public:
 

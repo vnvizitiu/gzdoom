@@ -1,18 +1,25 @@
-// Emacs style mode select	 -*- C++ -*- 
 //-----------------------------------------------------------------------------
 //
-// $Id:$
+// Copyright 1993-1996 id Software
+// Copyright 1994-1996 Raven Software
+// Copyright 1998-1998 Chi Hoang, Lee Killough, Jim Flynn, Rand Phares, Ty Halderman
+// Copyright 1999-2016 Randy Heit
+// Copyright 2002-2016 Christoph Oelckers
 //
-// Copyright (C) 1993-1996 by id Software, Inc.
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
 //
-// This source is available for distribution and/or modification
-// only under the terms of the DOOM Source Code License as
-// published by id Software. All rights reserved.
-//
-// The source is distributed in the hope that it will be useful,
+// This program is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
-// FITNESS FOR A PARTICULAR PURPOSE. See the DOOM Source Code License
-// for more details.
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see http://www.gnu.org/licenses/
+//
+//-----------------------------------------------------------------------------
 //
 // DESCRIPTION:  none
 //		Implements special effects:
@@ -31,6 +38,7 @@
 
 class FScanner;
 struct level_info_t;
+struct FDoorAnimation;
 
 struct FThinkerCollection
 {
@@ -76,6 +84,7 @@ const double CARRYFACTOR = 3 / 32.;
 #define DAMAGE_NONPLAYERS			2
 #define DAMAGE_IN_AIR				4
 #define DAMAGE_SUBCLASSES_PROTECT	8
+#define DAMAGE_NO_ARMOR				16
 
 
 // [RH] If a deathmatch game, checks to see if noexit is enabled.
@@ -149,7 +158,7 @@ void	EV_StartLightFading (int tag, int value, int tics);
 
 #define BUTTONTIME TICRATE		// 1 second, in ticks. 
 
-bool	P_ChangeSwitchTexture (side_t *side, int useAgain, BYTE special, bool *quest=NULL);
+bool	P_ChangeSwitchTexture (side_t *side, int useAgain, uint8_t special, bool *quest=NULL);
 bool	P_CheckSwitchRange(AActor *user, line_t *line, int sideno, const DVector3 *optpos = NULL);
 
 //
@@ -188,9 +197,9 @@ public:
 	void Tick ();
 
 	bool IsLift() const { return m_Type == platDownWaitUpStay || m_Type == platDownWaitUpStayStone; }
+	DPlat(sector_t *sector);
 
 protected:
-	DPlat (sector_t *sector);
 
 	double	 	m_Speed;
 	double	 	m_Low;
@@ -253,8 +262,8 @@ protected:
 	double		m_CeilingTarget;
 	int			m_Crush;
 	bool		m_Hexencrush;
-	TObjPtr<DInterpolation> m_Interp_Ceiling;
-	TObjPtr<DInterpolation> m_Interp_Floor;
+	TObjPtr<DInterpolation*> m_Interp_Ceiling;
+	TObjPtr<DInterpolation*> m_Interp_Floor;
 
 private:
 	DPillar ();
@@ -450,6 +459,7 @@ bool P_CreateCeiling(sector_t *sec, DCeiling::ECeiling type, line_t *line, int t
 bool EV_DoCeiling (DCeiling::ECeiling type, line_t *line, int tag, double speed, double speed2, double height, int crush, int silent, int change, DCeiling::ECrushMode hexencrush = DCeiling::ECrushMode::crushDoom);
 
 bool EV_CeilingCrushStop (int tag, bool remove);
+bool EV_StopCeiling(int tag, line_t *line);
 void P_ActivateInStasisCeiling (int tag);
 
 
@@ -547,7 +557,6 @@ public:
 		int usespecials);
 	friend bool EV_DoFloor (DFloor::EFloor floortype, line_t *line, int tag,
 		double speed, double height, int crush, int change, bool hexencrush, bool hereticlower);
-	friend bool EV_FloorCrushStop (int tag);
 	friend bool EV_DoDonut (int tag, line_t *line, double pillarspeed, double slimespeed);
 private:
 	DFloor ();
@@ -562,7 +571,8 @@ bool EV_BuildStairs (int tag, DFloor::EStair type, line_t *line,
 bool EV_DoFloor(DFloor::EFloor floortype, line_t *line, int tag,
 	double speed, double height, int crush, int change, bool hexencrush, bool hereticlower = false);
 
-bool EV_FloorCrushStop (int tag);
+bool EV_FloorCrushStop (int tag, line_t *line);
+bool EV_StopFloor(int tag, line_t *line);
 bool EV_DoDonut (int tag, line_t *line, double pillarspeed, double slimespeed);
 
 class DElevator : public DMover
@@ -592,8 +602,8 @@ protected:
 	double		m_FloorDestDist;
 	double		m_CeilingDestDist;
 	double		m_Speed;
-	TObjPtr<DInterpolation> m_Interp_Ceiling;
-	TObjPtr<DInterpolation> m_Interp_Floor;
+	TObjPtr<DInterpolation*> m_Interp_Ceiling;
+	TObjPtr<DInterpolation*> m_Interp_Floor;
 
 	void StartFloorSound ();
 

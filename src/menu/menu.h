@@ -109,6 +109,7 @@ extern FSavegameManager savegameManager;
 class DMenu;
 extern DMenu *CurrentMenu;
 extern int MenuTime;
+class DMenuItemBase;
 
 //=============================================================================
 //
@@ -124,18 +125,18 @@ public:
 	FName mMenuName;
 	FString mNetgameMessage;
 	PClass *mClass = nullptr;
+	bool mProtected = false;
+	TArray<DMenuItemBase *> mItems;
 
 	virtual size_t PropagateMark() { return 0;  }
 };
 
-class DMenuItemBase;
 
 class DListMenuDescriptor : public DMenuDescriptor
 {
 	DECLARE_CLASS(DListMenuDescriptor, DMenuDescriptor)
 
 public:
-	TArray<DMenuItemBase *> mItems;
 	int mSelectedItem;
 	double mSelectOfsX;
 	double mSelectOfsY;
@@ -186,7 +187,6 @@ class DOptionMenuDescriptor : public DMenuDescriptor
 	DECLARE_CLASS(DOptionMenuDescriptor, DMenuDescriptor)
 
 public:
-	TArray<DMenuItemBase *> mItems;
 	FString mTitle;
 	int mSelectedItem;
 	int mDrawTop;
@@ -262,7 +262,7 @@ public:
 		MOUSE_Release
 	};
 
-	TObjPtr<DMenu> mParentMenu;
+	TObjPtr<DMenu*> mParentMenu;
 	bool mMouseCapture;
 	bool mBackbuttonSelected;
 	bool DontDim;
@@ -339,7 +339,6 @@ void M_ActivateMenu(DMenu *menu);
 void M_ClearMenus ();
 void M_ParseMenuDefs();
 void M_StartupSkillMenu(FGameStartup *gs);
-int M_GetDefaultSkill();
 void M_StartControlPanel (bool makeSound);
 void M_SetMenu(FName menu, int param = -1);
 void M_StartMessage(const char *message, int messagemode, FName action = NAME_None);
@@ -350,11 +349,12 @@ void M_MarkMenus();
 
 
 struct IJoystickConfig;
-DMenuItemBase * CreateOptionMenuItemStaticText(const char *name, bool v);
+DMenuItemBase * CreateOptionMenuItemStaticText(const char *name, int v = -1);
 DMenuItemBase * CreateOptionMenuItemSubmenu(const char *label, FName cmd, int center);
 DMenuItemBase * CreateOptionMenuItemControl(const char *label, FName cmd, FKeyBindings *bindings);
 DMenuItemBase * CreateOptionMenuItemJoyConfigMenu(const char *label, IJoystickConfig *joy);
 DMenuItemBase * CreateListMenuItemPatch(double x, double y, int height, int hotkey, FTextureID tex, FName command, int param);
 DMenuItemBase * CreateListMenuItemText(double x, double y, int height, int hotkey, const char *text, FFont *font, PalEntry color1, PalEntry color2, FName command, int param);
+DMenuItemBase * CreateOptionMenuItemCommand(const char *label, FName cmd, bool centered = false);
 
 #endif

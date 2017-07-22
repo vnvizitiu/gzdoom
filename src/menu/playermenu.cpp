@@ -47,6 +47,7 @@
 #include "r_state.h"
 #include "r_data/r_translate.h"
 #include "v_text.h"
+#include "vm.h"
 
 EXTERN_CVAR(Int, team)
 EXTERN_CVAR(Float, autoaim)
@@ -91,7 +92,7 @@ DEFINE_ACTION_FUNCTION(DPlayerMenu, PlayerNameChanged)
 	const char *pp = s;
 	FString command("name \"");
 
-	if (self == CurrentMenu)
+	if (self == CurrentMenu || self == CurrentMenu->mParentMenu)
 	{
 		// Escape any backslashes or quotation marks before sending the name to the console.
 		for (auto p = pp; *p != '\0'; ++p)

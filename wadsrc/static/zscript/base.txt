@@ -1,53 +1,49 @@
-struct InputEventData native
+struct _ native	// These are the global variables, the struct is only here to avoid extending the parser for this.
 {
-	native uint8	type;
-	native uint8	subtype;
-	native int16	data1;		// keys / mouse/joystick buttons
-	native int16	data2;
-	native int16	data3;
-	native int 		x;			// mouse/joystick x move
-	native int 		y;			// mouse/joystick y move
+	native readonly Array<class<Actor> > AllActorClasses;
+	native readonly Array<@PlayerClass> PlayerClasses;
+	native readonly Array<@PlayerSkin> PlayerSkins;
+	native readonly Array<@Team> Teams;
+	native int validcount;
+	native readonly bool multiplayer;
+	native play @LevelLocals level;
+	native @KeyBindings Bindings;
+	native @KeyBindings AutomapBindings;
+	native play @DehInfo deh;
+	native readonly @GameInfoStruct gameinfo;
+	native play @PlayerInfo players[MAXPLAYERS];
+	native readonly bool playeringame[MAXPLAYERS];
+
+	native readonly bool automapactive;
+	native play uint gameaction;
+	native readonly int gamestate;
+	native readonly TextureID skyflatnum;
+	native readonly uint8 globalfreeze;
+	native readonly int consoleplayer;
+	native readonly Font smallfont;
+	native readonly Font smallfont2;
+	native readonly Font bigfont;
+	native readonly Font confont;
+	native readonly Font intermissionfont;
+	native readonly int CleanXFac;
+	native readonly int CleanYFac;
+	native readonly int CleanWidth;
+	native readonly int CleanHeight;
+	native readonly int CleanXFac_1;
+	native readonly int CleanYFac_1;
+	native readonly int CleanWidth_1;
+	native readonly int CleanHeight_1;
+	native ui int menuactive;
+	native readonly @FOptionMenuSettings OptionMenuSettings;
+	native readonly int gametic;
+	native readonly bool demoplayback;
+	native ui int BackbuttonTime;
+	native ui float BackbuttonAlpha;
+	native readonly int Net_Arbitrator;
+	native ui BaseStatusBar StatusBar;
+	native readonly Weapon WP_NOCHANGE;
+	native int LocalViewPitch;
 	
-	enum EGenericEvent
-	{
-		NoEvent,
-		KeyDown,		// data1: scan code, data2: Qwerty ASCII code
-		KeyUp,		// same
-		Mouse,		// x, y: mouse movement deltas
-		GUI_Event,	// subtype specifies actual event
-		DeviceChange,// a device has been connected or removed
-	}
-	
-	enum EGUIEvent
-	{
-		GUI_None,
-		GUI_KeyDown,			// data1: unshifted ASCII, data2: shifted ASCII, data3: modifiers
-		GUI_KeyRepeat,		// same
-		GUI_KeyUp,			// same
-		GUI_Char,			// data1: translated character (for user text input), data2: alt down?
-		GUI_FirstMouseEvent,
-			GUI_MouseMove,
-			GUI_LButtonDown,
-			GUI_LButtonUp,
-			GUI_LButtonDblClick,
-			GUI_MButtonDown,
-			GUI_MButtonUp,
-			GUI_MButtonDblClick,
-			GUI_RButtonDown,
-			GUI_RButtonUp,
-			GUI_RButtonDblClick,
-			GUI_WheelUp,			// data3: shift/ctrl/alt
-			GUI_WheelDown,		// "
-			GUI_WheelRight,		// "
-			GUI_WheelLeft,		// "
-			GUI_BackButtonDown,
-			GUI_BackButtonUp,
-			GUI_FwdButtonDown,
-			GUI_FwdButtonUp,
-		GUI_LastMouseEvent,
-	};
-	
-	const KEY_ESCAPE = 0x01;
 }
 
 struct TexMan
@@ -96,6 +92,10 @@ struct TexMan
 	native static void ReplaceTextures(String from, String to, int flags);
 	native static int, int GetSize(TextureID tex);
 	native static Vector2 GetScaledSize(TextureID tex);
+	native static Vector2 GetScaledOffset(TextureID tex);
+	native static int CheckRealHeight(TextureID tex);
+
+	native static void SetCameraToTexture(Actor viewpoint, String texture, int fov);
 }
 
 enum DrawTextureTags
@@ -164,11 +164,22 @@ struct Screen native
 	native static void Clear(int left, int top, int right, int bottom, Color color, int palcolor = -1);
 	native static void Dim(Color col, double amount, int x, int y, int w, int h);
 
-	native static void DrawHUDTexture(TextureID tex, double x, double y);
 	native static vararg void DrawTexture(TextureID tex, bool animate, double x, double y, ...);
 	native static vararg void DrawChar(Font font, int normalcolor, double x, double y, int character, ...);
 	native static vararg void DrawText(Font font, int normalcolor, double x, double y, String text, ...);
 	native static void DrawFrame(int x, int y, int w, int h);
+	native static Vector2, Vector2 VirtualToRealCoords(Vector2 pos, Vector2 size, Vector2 vsize, bool vbottom=false, bool handleaspect=true);
+	native static double GetAspectRatio();
+	native static void SetClipRect(int x, int y, int w, int h);
+	native static void ClearClipRect();
+	native static int, int, int, int GetClipRect();
+	
+	
+	// This is a leftover of the abandoned Inventory.DrawPowerup method.
+	deprecated("2.5") static ui void DrawHUDTexture(TextureID tex, double x, double y)
+	{
+		statusBar.DrawTexture(tex, (x, y), BaseStatusBar.DI_SCREEN_RIGHT_TOP, 1., (32, 32));
+	}
 }
 
 struct Font native
@@ -244,12 +255,13 @@ struct Font native
 	native BrokenLines BreakLines(String text, int maxlen);
 }
 
-struct Translation
+struct Translation version("2.4")
 {
 	Color colors[256];
 	
 	native int AddTranslation();
 	native static bool SetPlayerTranslation(int group, int num, int plrnum, PlayerClass pclass);
+	native static int GetID(Name transname);
 	static int MakeID(int group, int num)
 	{
 		return (group << 16) + num;
@@ -280,6 +292,7 @@ struct CVar native
 	};
 
 	native static CVar FindCVar(Name name);
+	native static CVar GetCVar(Name name, PlayerInfo player = null);
 	native int GetInt();
 	native double GetFloat();
 	native String GetString();
@@ -290,7 +303,7 @@ struct CVar native
 	native int ResetToDefault();
 }
 
-struct GIFont
+struct GIFont version("2.4")
 {
 	Name fontname;
 	Name color;
@@ -310,6 +323,8 @@ struct GameInfoStruct native
 	native GIFont mStatscreenMapNameFont;
 	native GIFont mStatscreenEnteringFont;
 	native GIFont mStatscreenFinishedFont;
+	native double gibfactor;
+	native bool intermissioncounter;
 }
 
 class Object native
@@ -317,6 +332,7 @@ class Object native
 	native bool bDestroyed;
 
 	// These really should be global functions...
+	native static String G_SkillName();
 	native static int G_SkillPropertyInt(int p);
 	native static double G_SkillPropertyFloat(int p);
 	native static vector3, int G_PickDeathmatchStart();
@@ -328,22 +344,22 @@ class Object native
 	native static uint BAM(double angle);
 	native static void SetMusicVolume(float vol);
 	native static uint MSTime();
+	native vararg static void ThrowAbortException(String fmt, ...);
 
-	native Name GetClassName();
-	native void Destroy();
+	native virtualscope void Destroy();
 
 	// This does not call into the native method of the same name to avoid problems with objects that get garbage collected late on shutdown.
-	virtual void OnDestroy() {}
+	virtual virtualscope void OnDestroy() {}
 }
 
-class BrokenLines : Object native
+class BrokenLines : Object native version("2.4")
 {
 	native int Count();
 	native int StringWidth(int line);
 	native String StringAt(int line);
 }
 
-class Thinker : Object native
+class Thinker : Object native play
 {
 	enum EStatnums
 	{
@@ -353,6 +369,7 @@ class Thinker : Object native
 		STAT_AUTODECAL,							// A decal that can be automatically deleted
 		STAT_CORPSEPOINTER,						// An entry in Hexen's corpse queue
 		STAT_TRAVELLING,						// An actor temporarily travelling to a new map
+		STAT_STATIC,
 
 		// Thinkers that do think
 		STAT_FIRST_THINKING=32,
@@ -366,6 +383,7 @@ class Thinker : Object native
 		STAT_LIGHTTRANSFER,						// A sector light transfer. These must be ticked after the light effects.
 		STAT_EARTHQUAKE,						// Earthquake actors
 		STAT_MAPMARKER,							// Map marker actors
+		STAT_DLIGHT,							// Dynamic lights
 
 		STAT_DEFAULT = 100,						// Thinkers go here unless specified otherwise.
 		STAT_SECTOREFFECT,						// All sector effects that cause floor and ceiling movement
@@ -380,18 +398,24 @@ class Thinker : Object native
 	virtual native void Tick();
 	virtual native void PostBeginPlay();
 	virtual native void ChangeStatNum(int stat);
+	
+	static clearscope int Tics2Seconds(int tics)
+	{
+		// This compensates for one tic being slightly less than 1/35 of a second.
+		return int(tics * (0.98 / TICRATE));
+	}
+
 }
 
 class ThinkerIterator : Object native
 {
-
 	native static ThinkerIterator Create(class<Object> type = "Actor", int statnum=Thinker.MAX_STATNUM+1);
 	native Thinker Next(bool exact = false);
 	native void Reinit();
 }
 
 class ActorIterator : Object native
-{
+{	
 	native static ActorIterator Create(int tid, class<Actor> type = "Actor");
 	native Actor Next();
 	native void Reinit();
@@ -408,12 +432,24 @@ class BlockThingsIterator : Object native
 	native bool Next();
 }
 
+class BlockLinesIterator : Object native
+{
+	native Line CurLine;
+	native Vector3 position;
+	native int portalflags;
+	
+	native static BlockThingsIterator Create(Actor origin, double checkradius = -1);
+	native static BlockThingsIterator CreateFromPos(Vector3 pos, double checkh, double checkradius, Sector sec = null);
+	native bool Next();
+}
+
+
 struct DropItem native
 {
 	native readonly DropItem Next;
 	native readonly name Name;
 	native readonly int Probability;
-	native int Amount;
+	native readonly int Amount;
 }
 
 class SpotState : Object native
@@ -434,6 +470,12 @@ struct LevelLocals native
 		//UDMF_Thing // not implemented
 	};
 
+	native Array<@Sector> Sectors;
+	native Array<@Line> Lines;
+	native Array<@Side> Sides;
+	native readonly Array<@Vertex> Vertexes;
+	native Array<@SectorPortal> SectorPortals;
+	
 	native readonly int time;
 	native readonly int maptime;
 	native readonly int totaltime;
@@ -457,30 +499,48 @@ struct LevelLocals native
 	native int found_items;
 	native int total_monsters;
 	native int killed_monsters;
-	native double gravity;
-	native double aircontrol;
-	native double airfriction;
-	native int airsupply;
-	native double teamdamage;
-	native bool monsterstelefrag;
-	native bool actownspecial;
-	native bool sndseqtotalctrl;
+	native play double gravity;
+	native play double aircontrol;
+	native play double airfriction;
+	native play int airsupply;
+	native readonly double teamdamage;
+	native readonly bool noinventorybar;
+	native readonly bool monsterstelefrag;
+	native readonly bool actownspecial;
+	native readonly bool sndseqtotalctrl;
 	native bool allmap;
-	native bool missilesactivateimpact;
-	native bool monsterfallingdamage;
-	native bool checkswitchrange;
-	native bool polygrind;
-	native bool nomonsters;
+	native readonly bool missilesactivateimpact;
+	native readonly bool monsterfallingdamage;
+	native readonly bool checkswitchrange;
+	native readonly bool polygrind;
+	native readonly bool nomonsters;
+	native readonly bool allowrespawn;
 	native bool frozen;
-	native bool infinite_flight;
-	native bool no_dlg_freeze;
+	native readonly bool infinite_flight;
+	native readonly bool no_dlg_freeze;
+	native readonly int fogdensity;
+	native readonly int outsidefogdensity;
+	native readonly int skyfog;
 // level_info_t *info cannot be done yet.
 
 	native String GetUDMFString(int type, int index, Name key);
 	native int GetUDMFInt(int type, int index, Name key);
 	native double GetUDMFFloat(int type, int index, Name key);
 	native bool ExecuteSpecial(int special, Actor activator, line linedef, bool lineside, int arg1 = 0, int arg2 = 0, int arg3 = 0, int arg4 = 0, int arg5 = 0);
-
+	native static void StartSlideshow(Name whichone = 'none');
+	native static void WorldDone();
+	native static void RemoveAllBots(bool fromlist);
+	native void SetInterMusic(String nextmap);
+	native String FormatMapName(int mapnamecolor);
+	native bool IsJumpingAllowed() const;
+	native bool IsCrouchingAllowed() const;
+	native bool IsFreelookAllowed() const;
+	
+	String TimeFormatted(bool totals = false)
+	{
+		int sec = Thinker.Tics2Seconds(totals? totaltime : time); 
+		return String.Format("%02d:%02d:%02d", sec / 3600, (sec % 3600) / 60, sec % 60);
+	}
 }
 
 struct StringTable native
@@ -590,15 +650,31 @@ struct StringStruct native
 	native vararg void AppendFormat(String fmt, ...);
 
 	native void Replace(String pattern, String replacement);
-	native String Left(int len);
-	native String Mid(int pos = 0, int len = 2147483647);
+	native String Left(int len) const;
+	native String Mid(int pos = 0, int len = 2147483647) const;
 	native void Truncate(int newlen);
-	native String CharAt(int pos);
-	native int CharCodeAt(int pos);
+	native String CharAt(int pos) const;
+	native int CharCodeAt(int pos) const;
 	native String Filter();
+	native int IndexOf(String substr, int startIndex = 0) const;
+	native int LastIndexOf(String substr) const;
 }
 
-class Floor : Thinker native
+class SectorEffect : Thinker native
+{
+	native protected Sector m_Sector;
+}
+
+class Mover : SectorEffect native
+{}
+
+class MovingFloor : Mover native
+{}
+
+class MovingCeiling : Mover native
+{}
+
+class Floor : MovingFloor native
 {
 	// only here so that some constants and functions can be added. Not directly usable yet.
 	enum EFloor
@@ -617,7 +693,7 @@ class Floor : Thinker native
 		floorRaiseInstant,
 		floorMoveToValue,
 		floorRaiseToLowestCeiling,
-		floorRaiseuint8xture,
+		floorRaiseByTexture,
 
 		floorLowerAndChange,
 		floorRaiseAndChange,
@@ -625,7 +701,7 @@ class Floor : Thinker native
 		floorRaiseToLowest,
 		floorRaiseToCeiling,
 		floorLowerToLowestCeiling,
-		floorLoweruint8xture,
+		floorLowerByTexture,
 		floorLowerToCeiling,
 
 		donutRaise,
@@ -643,7 +719,7 @@ class Floor : Thinker native
 	native static bool CreateFloor(sector sec, EFloor floortype, line ln, double speed, double height = 0, int crush = -1, int change = 0, bool crushmode = false, bool hereticlower = false);
 }
 
-class Ceiling : Thinker native
+class Ceiling : MovingCeiling native
 {
 	enum ECeiling
 	{
@@ -668,8 +744,8 @@ class Ceiling : Thinker native
 		ceilLowerToNearest,
 		ceilRaiseToHighestFloor,
 		ceilRaiseToFloor,
-		ceilRaiseuint8xture,
-		ceilLoweruint8xture,
+		ceilRaiseByTexture,
+		ceilLowerByTexture,
 
 		genCeilingChg0,
 		genCeilingChgT,
@@ -696,3 +772,16 @@ struct LookExParams
 	int flags;
 	State seestate;
 };
+
+class Lighting : SectorEffect native
+{
+}
+
+struct Shader native
+{
+	native clearscope static void SetEnabled(PlayerInfo player, string shaderName, bool enable);
+	native clearscope static void SetUniform1f(PlayerInfo player, string shaderName, string uniformName, float value);
+	native clearscope static void SetUniform2f(PlayerInfo player, string shaderName, string uniformName, vector2 value);
+	native clearscope static void SetUniform3f(PlayerInfo player, string shaderName, string uniformName, vector3 value);
+	native clearscope static void SetUniform1i(PlayerInfo player, string shaderName, string uniformName, int value);
+}

@@ -53,6 +53,7 @@
 #include "m_joy.h"
 #include "sbar.h"
 #include "hardware.h"
+#include "vm.h"
 
 /*=======================================
  *
@@ -77,7 +78,7 @@ EXTERN_CVAR (Bool, vid_tft)		// Defined below
 int testingmode;		// Holds time to revert to old mode
 int OldWidth, OldHeight, OldBits;
 static FIntCVar DummyDepthCvar (NULL, 0, 0);
-static BYTE BitTranslate[32];
+static uint8_t BitTranslate[32];
 
 CUSTOM_CVAR (Int, menu_screenratios, -1, CVAR_ARCHIVE)
 {
@@ -118,7 +119,7 @@ CUSTOM_CVAR (Bool, vid_tft, true, CVAR_ARCHIVE|CVAR_GLOBALCONFIG)
 	setsizeneeded = true;
 	if (StatusBar != NULL)
 	{
-		StatusBar->ScreenSizeChanged();
+		StatusBar->CallScreenSizeChanged();
 	}	
 }
 

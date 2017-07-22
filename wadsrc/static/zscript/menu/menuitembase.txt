@@ -4,7 +4,7 @@
 //
 //=============================================================================
 
-class MenuItemBase : Object native
+class MenuItemBase : Object native ui version("2.4")
 {
 	protected native double mXpos, mYpos;
 	protected native Name mAction;
@@ -40,6 +40,7 @@ class MenuItemBase : Object native
 	double GetY() { return mYpos; }
 	double GetX() { return mXpos; }
 	void SetX(double x) { mXpos = x; }
+	virtual void OnMenuCreated() {}
 }
 
 // this is only used to parse font color ranges in MENUDEF

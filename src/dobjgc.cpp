@@ -65,7 +65,6 @@
 #include "sbar.h"
 #include "stats.h"
 #include "c_dispatch.h"
-#include "p_acs.h"
 #include "s_sndseq.h"
 #include "r_data/r_interpolate.h"
 #include "doomstat.h"
@@ -150,7 +149,7 @@ DObject *Gray;
 DObject *Root;
 DObject *SoftRoots;
 DObject **SweepPos;
-DWORD CurrentWhite = OF_White0 | OF_Fixed;
+uint32_t CurrentWhite = OF_White0 | OF_Fixed;
 EGCState State = GCS_Pause;
 int Pause = DEFAULT_GCPAUSE;
 int StepMul = DEFAULT_GCMUL;
@@ -324,14 +323,11 @@ static void MarkRoot()
 	int i;
 
 	Gray = NULL;
-	Mark(Args);
-	Mark(screen);
 	Mark(StatusBar);
 	M_MarkMenus();
 	Mark(DIntermissionController::CurrentIntermission);
 	DThinker::MarkRoots();
 	FCanvasTextureInfo::Mark();
-	Mark(DACSThinker::ActiveThinker);
 	Mark(E_FirstEventHandler);
 	Mark(E_LastEventHandler);
 	for (auto &s : level.sectorPortals)
@@ -354,7 +350,7 @@ static void MarkRoot()
 	// Mark sectors.
 	if (SectorMarker == nullptr && level.sectors.Size() > 0)
 	{
-		SectorMarker = new DSectorMarker;
+		SectorMarker = Create<DSectorMarker>();
 	}
 	else if (level.sectors.Size() == 0)
 	{
@@ -366,8 +362,6 @@ static void MarkRoot()
 	}
 	Mark(SectorMarker);
 	Mark(interpolator.Head);
-	// Mark global symbols
-	Namespaces.MarkSymbols();
 	// Mark bot stuff.
 	Mark(bglobal.firstthing);
 	Mark(bglobal.body1);
@@ -597,7 +591,7 @@ void AddSoftRoot(DObject *obj)
 		// Create a new object to root the soft roots off of, and stick
 		// it at the end of the object list, so we know that anything
 		// before it is not a soft root.
-		SoftRoots = new DObject;
+		SoftRoots = Create<DObject>();
 		SoftRoots->ObjectFlags |= OF_Fixed;
 		probe = &Root;
 		while (*probe != NULL)

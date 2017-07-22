@@ -1,3 +1,25 @@
+//-----------------------------------------------------------------------------
+//
+// Copyright 1993-1996 id Software
+// Copyright 1999-2016 Randy Heit
+// Copyright 2005-2016 Christoph Oelckers
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see http://www.gnu.org/licenses/
+//
+//-----------------------------------------------------------------------------
+//
+
 
 #include "doomtype.h"
 #include "w_wad.h"
@@ -14,6 +36,7 @@
 #include "r_data/sprites.h"
 #include "r_data/voxels.h"
 #include "textures/textures.h"
+#include "vm.h"
 
 void gl_InitModels();
 
@@ -21,7 +44,7 @@ void gl_InitModels();
 //	and range check thing_t sprites patches
 TArray<spritedef_t> sprites;
 TArray<spriteframe_t> SpriteFrames;
-DWORD			NumStdSprites;		// The first x sprites that don't belong to skins.
+uint32_t			NumStdSprites;		// The first x sprites that don't belong to skins.
 
 struct spriteframewithrotate : public spriteframe_t
 {
@@ -31,9 +54,50 @@ struct spriteframewithrotate : public spriteframe_t
 
 // [RH] skin globals
 TArray<FPlayerSkin> Skins;
-BYTE			OtherGameSkinRemap[256];
+uint8_t			OtherGameSkinRemap[256];
 PalEntry		OtherGameSkinPalette[256];
 
+
+//===========================================================================
+//
+//  Gets the texture index for a sprite frame
+//
+//===========================================================================
+
+FTextureID spritedef_t::GetSpriteFrame(int frame, int rot, DAngle ang, bool *mirror, bool flipagain)
+{
+	if ((unsigned)frame >= numframes)
+	{
+		// If there are no frames at all for this sprite, don't draw it.
+		return FNullTextureID();
+	}
+	else
+	{
+		// choose a different rotation based on player view
+		spriteframe_t *sprframe = &SpriteFrames[spriteframes + frame];
+		if (rot == -1)
+		{
+			if ((sprframe->Texture[0] == sprframe->Texture[1]) && flipagain)
+			{
+				rot = (360.0 - ang + 45.0 / 2 * 9).BAMs() >> 28;
+			}
+			else if (sprframe->Texture[0] == sprframe->Texture[1])
+			{
+				rot = (ang + 45.0 / 2 * 9).BAMs() >> 28;
+			}
+			else if (flipagain)
+			{
+				rot = (360.0 - ang + (45.0 / 2 * 9 - 180.0 / 16)).BAMs() >> 28;
+			}
+			else
+			{
+				rot = (ang + (45.0 / 2 * 9 - 180.0 / 16)).BAMs() >> 28;
+			}
+		}
+		if (mirror) *mirror = !!(sprframe->Flip&(1 << rot));
+		return sprframe->Texture[rot];
+	}
+}
 
 
 //
@@ -211,7 +275,7 @@ static void R_InstallSprite (int num, spriteframewithrotate *sprtemp, int &maxfr
 	
 	// allocate space for the frames present and copy sprtemp to it
 	sprites[num].numframes = maxframe;
-	sprites[num].spriteframes = WORD(framestart = SpriteFrames.Reserve (maxframe));
+	sprites[num].spriteframes = uint16_t(framestart = SpriteFrames.Reserve (maxframe));
 	for (frame = 0; frame < maxframe; ++frame)
 	{
 		memcpy (SpriteFrames[framestart+frame].Texture, sprtemp[frame].Texture, sizeof(sprtemp[frame].Texture));
@@ -262,7 +326,7 @@ void R_InitSpriteDefs ()
 		char Frame;
 	} *vhashes;
 	unsigned int i, j, smax, vmax;
-	DWORD intname;
+	uint32_t intname;
 
 	spriteframewithrotate sprtemp[MAX_SPRITE_FRAMES];
 
@@ -428,7 +492,7 @@ static void R_ExtendSpriteFrames(spritedef_t &spr, int frame)
 		newstart = SpriteFrames.Reserve(frame - spr.numframes);
 		if (spr.numframes == 0)
 		{
-			spr.spriteframes = WORD(newstart);
+			spr.spriteframes = uint16_t(newstart);
 		}
 	}
 	else
@@ -440,7 +504,7 @@ static void R_ExtendSpriteFrames(spritedef_t &spr, int frame)
 		{
 			SpriteFrames[newstart + i] = SpriteFrames[spr.spriteframes + i];
 		}
-		spr.spriteframes = WORD(newstart);
+		spr.spriteframes = uint16_t(newstart);
 		newstart += i;
 	}
 	// Initialize all new frames to 0.
@@ -510,7 +574,7 @@ void R_InitSkins (void)
 	spritedef_t temp;
 	int sndlumps[NUMSKINSOUNDS];
 	char key[65];
-	DWORD intname, crouchname;
+	uint32_t intname, crouchname;
 	unsigned i;
 	int j, k, base;
 	int lastlump;
@@ -574,13 +638,13 @@ void R_InitSkins (void)
 			{
 				for (j = 3; j >= 0; j--)
 					sc.String[j] = toupper (sc.String[j]);
-				intname = *((DWORD *)sc.String);
+				intname = *((uint32_t *)sc.String);
 			}
 			else if (0 == stricmp (key, "crouchsprite"))
 			{
 				for (j = 3; j >= 0; j--)
 					sc.String[j] = toupper (sc.String[j]);
-				crouchname = *((DWORD *)sc.String);
+				crouchname = *((uint32_t *)sc.String);
 			}
 			else if (0 == stricmp (key, "face"))
 			{
@@ -787,7 +851,7 @@ void R_InitSkins (void)
 				for (k = base + 1; Wads.GetLumpNamespace(k) == basens; k++)
 				{
 					char lname[9];
-					DWORD lnameint;
+					uint32_t lnameint;
 					Wads.GetLumpName (lname, k);
 					memcpy(&lnameint, lname, 4);
 					if (lnameint == intname)
@@ -893,7 +957,7 @@ CCMD (skins)
 static void R_CreateSkinTranslation (const char *palname)
 {
 	FMemLump lump = Wads.ReadLump (palname);
-	const BYTE *otherPal = (BYTE *)lump.GetMem();
+	const uint8_t *otherPal = (uint8_t *)lump.GetMem();
  
 	for (int i = 0; i < 256; ++i)
 	{

@@ -35,7 +35,7 @@
 
 class ListMenuItem : MenuItemBase
 {
-	void DrawSelector(double xofs, double yofs, TextureID tex)
+	virtual void DrawSelector(double xofs, double yofs, TextureID tex)
 	{
 		if (tex.isNull())
 		{
@@ -119,7 +119,7 @@ class ListMenuItemStaticText : ListMenuItem
 	int mColor;
 	bool mCentered;
 
-	void Init(ListMenuDescriptor desc, double x, double y, String text, int color = Font.CR_UNTRANSLATED)
+	void Init(ListMenuDescriptor desc, double x, double y, String text, int color = -1)
 	{
 		Super.Init(x, y);
 		mText = text;
@@ -199,7 +199,7 @@ class ListMenuItemSelectable : ListMenuItem
 
 	override bool CheckHotkey(int c)
 	{ 
-		return c == mHotkey; 
+		return c > 0 && c == mHotkey;
 	}
 	
 	override bool Activate()
@@ -267,7 +267,7 @@ class ListMenuItemTextItem : ListMenuItemSelectable
 	
 	override int GetWidth()
 	{
-		return min(1, mFont.StringWidth(StringTable.Localize(mText))); 
+		return max(1, mFont.StringWidth(StringTable.Localize(mText))); 
 	}
 }
 

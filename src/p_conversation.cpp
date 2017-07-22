@@ -61,27 +61,28 @@
 #include "p_local.h"
 #include "menu/menu.h"
 #include "g_levellocals.h"
-#include "virtual.h"
+#include "vm.h"
+#include "actorinlines.h"
 
 // The conversations as they exist inside a SCRIPTxx lump.
 struct Response
 {
-	SDWORD GiveType;
-	SDWORD Item[3];
-	SDWORD Count[3];
+	int32_t GiveType;
+	int32_t Item[3];
+	int32_t Count[3];
 	char Reply[32];
 	char Yes[80];
-	SDWORD Link;
-	DWORD Log;
+	int32_t Link;
+	uint32_t Log;
 	char No[80];
 };
 
 struct Speech
 {
-	DWORD SpeakerType;
-	SDWORD DropType;
-	SDWORD ItemCheck[3];
-	SDWORD Link;
+	uint32_t SpeakerType;
+	int32_t DropType;
+	int32_t ItemCheck[3];
+	int32_t Link;
 	char Name[16];
 	char Sound[8];
 	char Backdrop[8];
@@ -92,9 +93,9 @@ struct Speech
 // The Teaser version of the game uses an older version of the structure
 struct TeaserSpeech
 {
-	DWORD SpeakerType;
-	SDWORD DropType;
-	DWORD VoiceNumber;
+	uint32_t SpeakerType;
+	int32_t DropType;
+	uint32_t VoiceNumber;
 	char Name[16];
 	char Dialogue[320];
 	Response Responses[5];
@@ -116,8 +117,8 @@ static int ConversationPauseTic;
 static int StaticLastReply;
 
 static bool LoadScriptFile(int lumpnum, FileReader *lump, int numnodes, bool include, int type);
-static FStrifeDialogueNode *ReadRetailNode (FileReader *lump, DWORD &prevSpeakerType);
-static FStrifeDialogueNode *ReadTeaserNode (FileReader *lump, DWORD &prevSpeakerType);
+static FStrifeDialogueNode *ReadRetailNode (FileReader *lump, uint32_t &prevSpeakerType);
+static FStrifeDialogueNode *ReadTeaserNode (FileReader *lump, uint32_t &prevSpeakerType);
 static void ParseReplies (FStrifeDialogueReply **replyptr, Response *responses);
 static bool DrawConversationMenu ();
 static void PickConversationReply (int replyindex);
@@ -205,6 +206,11 @@ void P_LoadStrifeConversations (MapData *map, const char *mapname)
 		{
 			if (!LoadScriptFile (scriptname_b, false, 1))
 			{
+				if (gameinfo.Dialogue.IsNotEmpty())
+				{
+					if (LoadScriptFile(gameinfo.Dialogue, false, 0)) return;
+				}
+
 				LoadScriptFile ("SCRIPT00", false, 1);
 			}
 		}
@@ -238,7 +244,7 @@ bool LoadScriptFile (const char *name, bool include, int type)
 static bool LoadScriptFile(int lumpnum, FileReader *lump, int numnodes, bool include, int type)
 {
 	int i;
-	DWORD prevSpeakerType;
+	uint32_t prevSpeakerType;
 	FStrifeDialogueNode *node;
 	char buffer[4];
 
@@ -312,7 +318,7 @@ static bool LoadScriptFile(int lumpnum, FileReader *lump, int numnodes, bool inc
 //
 //============================================================================
 
-static FStrifeDialogueNode *ReadRetailNode (FileReader *lump, DWORD &prevSpeakerType)
+static FStrifeDialogueNode *ReadRetailNode (FileReader *lump, uint32_t &prevSpeakerType)
 {
 	FStrifeDialogueNode *node;
 	Speech speech;
@@ -361,7 +367,7 @@ static FStrifeDialogueNode *ReadRetailNode (FileReader *lump, DWORD &prevSpeaker
 	node->SpeakerName = speech.Name;
 
 	// The item the speaker should drop when killed.
-	node->DropType = dyn_cast<PClassActor>(GetStrifeType(speech.DropType));
+	node->DropType = GetStrifeType(speech.DropType);
 
 	// Items you need to have to make the speaker use a different node.
 	node->ItemCheck.Resize(3);
@@ -388,7 +394,7 @@ static FStrifeDialogueNode *ReadRetailNode (FileReader *lump, DWORD &prevSpeaker
 //
 //============================================================================
 
-static FStrifeDialogueNode *ReadTeaserNode (FileReader *lump, DWORD &prevSpeakerType)
+static FStrifeDialogueNode *ReadTeaserNode (FileReader *lump, uint32_t &prevSpeakerType)
 {
 	FStrifeDialogueNode *node;
 	TeaserSpeech speech;
@@ -441,7 +447,7 @@ static FStrifeDialogueNode *ReadTeaserNode (FileReader *lump, DWORD &prevSpeaker
 	node->SpeakerName = speech.Name;
 
 	// The item the speaker should drop when killed.
-	node->DropType = dyn_cast<PClassActor>(GetStrifeType (speech.DropType));
+	node->DropType = GetStrifeType (speech.DropType);
 
 	// Items you need to have to make the speaker use a different node.
 	node->ItemCheck.Resize(3);
@@ -506,7 +512,7 @@ static void ParseReplies (FStrifeDialogueReply **replyptr, Response *responses)
 		reply->LogString = "";
 
 		// The item to receive when this reply is used.
-		reply->GiveType = dyn_cast<PClassActor>(GetStrifeType (rsp->GiveType));
+		reply->GiveType = GetStrifeType (rsp->GiveType);
 		reply->ActionSpecial = 0;
 
 		// Do you need anything special for this reply to succeed?
@@ -633,7 +639,7 @@ static void TakeStrifeItem (player_t *player, PClassActor *itemtype, int amount)
 		return;
 
 	// Don't take the sigil.
-	if (itemtype->GetClass()->TypeName == NAME_Sigil)
+	if (itemtype->TypeName == NAME_Sigil)
 		return;
 
 	player->mo->TakeInventory(itemtype, amount);
@@ -861,7 +867,7 @@ void P_StartConversation (AActor *npc, AActor *pc, bool facetalker, bool saveang
 		{
 			VMValue params[] = { cmenu, CurNode, pc->player, StaticLastReply };
 			VMReturn ret(&ConversationMenuY);
-			GlobalVMStack.Call(func, params, countof(params), &ret, 1);
+			VMCall(func, params, countof(params), &ret, 1);
 		}
 
 		if (CurNode != PrevNode)
@@ -1103,7 +1109,7 @@ static void HandleReply(player_t *player, bool isconsole, int nodenum, int reply
 //
 //============================================================================
 
-void P_ConversationCommand (int netcode, int pnum, BYTE **stream)
+void P_ConversationCommand (int netcode, int pnum, uint8_t **stream)
 {
 	player_t *player = &players[pnum];
 
@@ -1164,9 +1170,9 @@ static void TerminalResponse (const char *str)
 			// merchants can tell you something like this but continue to show
 			// their dialogue screen. I think most other conversations use this
 			// only as a response for terminating the dialogue.
-			StatusBar->AttachMessage(new DHUDMessageFadeOut(SmallFont, str,
+			StatusBar->AttachMessage(Create<DHUDMessageFadeOut>(SmallFont, str,
 				float(CleanWidth/2) + 0.4f, float(ConversationMenuY - 110 + CleanHeight/2), CleanWidth, -CleanHeight,
-				CR_UNTRANSLATED, 3, 1), MAKE_ID('T','A','L','K'));
+				CR_UNTRANSLATED, 3.f, 1.f), MAKE_ID('T','A','L','K'));
 		}
 		else
 		{
